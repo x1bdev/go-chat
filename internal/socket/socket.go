@@ -1,6 +1,7 @@
 package socket
 
 import (
+	"encoding/json"
 	"log/slog"
 	"sync"
 
@@ -45,10 +46,40 @@ func (s *SocketHandler) Listen(conn *websocket.Conn) {
 
 		if err != nil {
 			slog.Error("could not read buffer, error: %v", err)
-			return
+			continue
 		}
 
-		_ = numberOfBytes
+		data := buffer[:numberOfBytes]
+		message := &Message{}
+		err = json.Unmarshal(data, message)
 
+		if err != nil {
+			slog.Error("could not parse message, error: %v", err)
+			continue
+		}
+
+		s.Broadcast(conn, message)
 	}
+}
+
+func (s *SocketHandler) Broadcast(conn *websocket.Conn, message *Message) {
+
+	s.connections.Range(func(key, value any) bool {
+
+		current := key.(*websocket.Conn)
+
+		if conn == current {
+			return true
+		}
+
+		data, err := json.Marshal(message)
+
+		if err != nil {
+			slog.Error("could not marshal message, error: %v", err)
+			return true
+		}
+
+		current.Write(data)
+		return true
+	})
 }
