@@ -2,6 +2,7 @@ package socket
 
 import (
 	"encoding/json"
+	"io"
 	"log/slog"
 	"sync"
 
@@ -26,6 +27,7 @@ func (s *SocketHandler) HandleConnection(c echo.Context) error {
 
 	websocket.Handler(func(conn *websocket.Conn) {
 
+		slog.Info("new incomming connection from", "addr", conn.RemoteAddr().String())
 		defer conn.Close()
 
 		s.connections.Store(conn, true)
@@ -45,7 +47,12 @@ func (s *SocketHandler) Listen(conn *websocket.Conn) {
 		numberOfBytes, err := conn.Read(buffer)
 
 		if err != nil {
-			slog.Error("could not read buffer, error: %v", err)
+
+			if err == io.EOF {
+				break
+			}
+
+			slog.Error("could not read buffer", "error", err)
 			continue
 		}
 
@@ -54,7 +61,7 @@ func (s *SocketHandler) Listen(conn *websocket.Conn) {
 		err = json.Unmarshal(data, message)
 
 		if err != nil {
-			slog.Error("could not parse message, error: %v", err)
+			slog.Error("could not parse message", "error", err)
 			continue
 		}
 
@@ -75,11 +82,18 @@ func (s *SocketHandler) Broadcast(conn *websocket.Conn, message *Message) {
 		data, err := json.Marshal(message)
 
 		if err != nil {
-			slog.Error("could not marshal message, error: %v", err)
+			slog.Error("could not marshal message", "error", err)
 			return true
 		}
 
-		current.Write(data)
+		slog.Info("message will be broadcast for listeners", "data", string(data))
+
+		_, err = current.Write(data)
+
+		if err != nil {
+			slog.Error("could not send message", "error", err)
+			return true
+		}
 		return true
 	})
 }
